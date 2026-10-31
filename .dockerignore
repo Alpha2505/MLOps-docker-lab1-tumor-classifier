@@ -6,3 +6,7 @@ __pycache__
 artifacts
 *.tar
 .DS_Store
+tests/
+assets/
+tests/
+assets/
