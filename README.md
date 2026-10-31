@@ -1,133 +1,220 @@
-# Docker Lab 1 — Containerized Tumor Classifier with Model Selection
+# Docker Lab 1 - Containerized Breast Cancer Tumor Classifier
 
-This project packages a small machine-learning training job in a Docker container. The container trains three candidate models on the **Breast Cancer Wisconsin (Diagnostic)** dataset, selects the best one with stratified cross-validation, evaluates it on a held-out test set, and writes the trained model and a JSON metrics report to a mounted volume.
+## Overview
 
-## What I changed from the course lab
+This project implements a machine learning application inside a Docker container to classify breast cancer tumors as **malignant or benign**.
 
-The course's Docker Lab 1 trains a single Random Forest on the Iris dataset and saves it inside the container. This version keeps the same idea (train a model inside a container) but changes the data, the logic, and the container setup:
+The original lab uses the Iris dataset and a Random Forest classifier. I modified the project to use the Breast Cancer Wisconsin Diagnostic dataset and implemented a model training pipeline that compares multiple classifiers, selects the best-performing model, and evaluates it on a held-out test set.
 
-| Area | Course lab | This project |
-|---|---|---|
-| Dataset | Iris (150 rows, 3 classes) | Breast Cancer Wisconsin (569 rows, 30 features, binary) |
-| Modeling | One fixed Random Forest | Logistic Regression, RBF SVM and Gradient Boosting compared with stratified k-fold CV; best one is selected automatically |
-| Preprocessing | None | `StandardScaler` inside a scikit-learn `Pipeline`, so scaling is fit only on training folds and saved with the model |
-| Evaluation | None (only a "success" message) | Accuracy, precision, recall, F1, ROC-AUC, malignant-class recall and confusion matrix on a held-out set |
-| Output | `iris_model.pkl` left inside the container | `tumor_classifier.joblib` and `metrics.json` written to a volume you can mount on the host |
-| Configuration | Hard-coded | Environment variables (`TEST_SIZE`, `RANDOM_SEED`, `CV_FOLDS`, `SELECTION_METRIC`, `OUTPUT_DIR`) with validation |
-| Inference | None | `predict.py` loads the saved model and classifies sample rows |
-| Code structure | One script | Separate modules for config, data, models, training and prediction |
-| Tests | None | pytest suite covering config validation, data splitting, model selection, a quality bar and the saved model |
-| Dockerfile | `python:3.10`, root user, unpinned deps | `python:3.10-slim`, non-root user, pinned dependencies, layer caching, `.dockerignore`, volume for artifacts |
+The application runs inside a Docker container and saves the trained model and evaluation metrics as output artifacts.
 
-I report **malignant recall** separately because in this dataset label 0 means malignant, and a missed malignant tumor is the most costly mistake. The standard `recall` score only describes the benign class.
+## Modifications from the Original Lab
 
-## Project structure
+The following changes were made to the original implementation:
 
-```
-.
+- **Dataset:** Replaced the Iris dataset with the Breast Cancer Wisconsin Diagnostic dataset, which contains 569 samples and 30 features.
+- **Classification task:** Changed the task from Iris flower classification to binary classification of breast cancer tumors (malignant or benign).
+- **Multiple models:** Implemented Logistic Regression, Support Vector Machine (RBF kernel), and Gradient Boosting classifiers.
+- **Model selection:** Added 5-fold stratified cross-validation to compare the models and automatically select the best one based on ROC-AUC.
+- **Preprocessing:** Added StandardScaler to the Logistic Regression and SVM pipelines.
+- **Evaluation:** Added accuracy, precision, recall, F1-score, ROC-AUC, malignant recall, and confusion matrix evaluation.
+- **Configuration:** Added environment-based configuration for test size, random seed, cross-validation folds, selection metric, and output directory.
+- **Model artifacts:** Save the selected trained model as `tumor_classifier.joblib` and evaluation results as `metrics.json`.
+- **Prediction:** Added a separate prediction script to load the saved model and make predictions.
+- **Testing:** Added automated tests using pytest to validate configuration, data loading, model creation, training, evaluation, and artifact generation.
+- **Dockerfile:** Updated the Dockerfile to use a lightweight Python image, install dependencies, run as a non-root user, and store generated artifacts in a mounted directory.
+
+## Project Structure
+
+```text
+docker-lab1/
 ├── Dockerfile
 ├── .dockerignore
-├── requirements.txt        # runtime dependencies (pinned)
-├── requirements-dev.txt    # adds pytest
+├── .gitignore
+├── README.md
+├── requirements.txt
+├── requirements-dev.txt
 ├── src/
-│   ├── config.py           # env-var configuration + validation
-│   ├── data.py             # load + stratified split
-│   ├── models.py           # candidate pipelines
-│   ├── train.py            # CV model selection, evaluation, saving
-│   └── predict.py          # load saved model and predict
-└── tests/
-    ├── conftest.py
-    ├── test_config.py
-    ├── test_data.py
-    └── test_train.py
+│   ├── config.py
+│   ├── data.py
+│   ├── models.py
+│   ├── train.py
+│   └── predict.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_config.py
+│   ├── test_data.py
+│   └── test_train.py
+├── artifacts/
+│   ├── tumor_classifier.joblib
+│   └── metrics.json
+└── assets/
+    ├── docker-build.png
+    └── docker-run.png
 ```
 
-## Running with Docker
+The `artifacts/` directory is generated when the container runs. The `assets/` directory contains screenshots of the Docker build and execution.
 
-Build the image:
+## Requirements
+
+- Docker Desktop or Docker Engine
+- Python 3.10 (for running locally)
+- Git (optional, for cloning the repository)
+
+## Build the Docker Image
+
+From the project root directory, run:
 
 ```bash
 docker build -t lab1-tumor-classifier:v1 .
 ```
 
-Run training and copy the model and metrics back to your machine:
+This builds the Docker image using the provided Dockerfile and installs the required Python dependencies.
+
+## Run the Docker Container
+
+Create a local directory to store the generated artifacts:
 
 ```bash
-docker run --rm -v "$(pwd)/artifacts:/app/artifacts" lab1-tumor-classifier:v1
+mkdir -p artifacts
 ```
 
-After it finishes, `artifacts/` contains `tumor_classifier.joblib` and `metrics.json`.
-
-Override settings with environment variables, for example 10-fold CV selected on F1:
+Run the container:
 
 ```bash
-docker run --rm -e CV_FOLDS=10 -e SELECTION_METRIC=f1 \
-  -v "$(pwd)/artifacts:/app/artifacts" lab1-tumor-classifier:v1
+docker run --rm \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  lab1-tumor-classifier:v1
 ```
 
-Run the prediction script against the saved model:
+The container performs the following steps:
+
+1. Loads the Breast Cancer Wisconsin dataset.
+2. Splits the data into training and testing sets.
+3. Trains and compares three classification models using 5-fold cross-validation.
+4. Selects the best-performing model based on ROC-AUC.
+5. Evaluates the selected model on the held-out test set.
+6. Saves the trained model and evaluation metrics to the mounted `artifacts/` directory.
+
+After execution, the generated files will be available locally:
+
+```text
+artifacts/
+├── tumor_classifier.joblib
+└── metrics.json
+```
+
+## Model Prediction
+
+After training, the saved model can be used to make predictions.
+
+Run:
 
 ```bash
-docker run --rm -v "$(pwd)/artifacts:/app/artifacts" lab1-tumor-classifier:v1 python predict.py 5
+docker run --rm \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  lab1-tumor-classifier:v1 \
+  python predict.py 5
 ```
 
-Save the image as a tarball:
+The command loads the saved model and displays predictions for five samples, along with their prediction confidence and actual labels.
+
+## Screenshots
+
+### Docker Build
+
+The following screenshot shows the successful creation of the Docker image.
+
+![Docker Build](assets/docker-build.png)
+
+### Docker Training Run
+
+The following screenshot shows the container running the training pipeline, comparing models, selecting the best model, evaluating its performance, and saving the generated artifacts.
+
+![Docker Run](assets/docker-run.png)
+
+## Configuration
+
+The application supports configuration through environment variables.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TEST_SIZE` | `0.2` | Proportion of data reserved for testing |
+| `RANDOM_SEED` | `42` | Random seed for reproducibility |
+| `CV_FOLDS` | `5` | Number of cross-validation folds |
+| `SELECTION_METRIC` | `roc_auc` | Metric used for model selection |
+| `OUTPUT_DIR` | `artifacts` | Directory for saved model and metrics |
+
+## Running Tests
+
+To run the tests locally, create a virtual environment and install the development dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+Run the test suite:
+
+```bash
+pytest -v
+```
+
+The test suite contains 12 tests covering configuration validation, data loading, model creation, training, evaluation, prediction, and artifact generation.
+
+**Test result:** 12 tests passed.
+
+## Results
+
+The following results were obtained from the successful Docker container execution.
+
+### Cross-Validation Results
+
+| Model | Mean ROC-AUC | Standard Deviation |
+|---|---:|---:|
+| Logistic Regression | 0.9959 | 0.0050 |
+| SVM (RBF) | 0.9956 | 0.0048 |
+| Gradient Boosting | 0.9920 | 0.0052 |
+
+Logistic Regression was selected as the best-performing model based on the mean cross-validation ROC-AUC.
+
+### Held-Out Test Results
+
+| Metric | Score |
+|---|---:|
+| Accuracy | 0.9825 |
+| Precision | 0.9861 |
+| Recall | 0.9861 |
+| F1-score | 0.9861 |
+| ROC-AUC | 0.9954 |
+| Malignant Recall | 0.9762 |
+
+**Confusion Matrix:**
+
+| | Predicted Benign | Predicted Malignant |
+|---|---:|---:|
+| Actual Benign | 41 | 1 |
+| Actual Malignant | 1 | 71 |
+
+These results demonstrate the model's performance on the selected dataset. They are for educational purposes only and should not be interpreted as clinical diagnostic performance.
+
+## Save the Docker Image
+
+To export the built Docker image as a tar file:
 
 ```bash
 docker save lab1-tumor-classifier:v1 > lab1-tumor-classifier.tar
 ```
 
-## Configuration
-
-| Variable | Default | Allowed values |
-|---|---|---|
-| `TEST_SIZE` | `0.2` | 0.05 – 0.5 |
-| `RANDOM_SEED` | `42` | any integer |
-| `CV_FOLDS` | `5` | ≥ 2 |
-| `SELECTION_METRIC` | `roc_auc` | `roc_auc`, `f1`, `accuracy`, `recall`, `precision` |
-| `OUTPUT_DIR` | `/app/artifacts` in Docker, `artifacts` locally | any path |
-
-Invalid values stop the run with a clear error message.
-
-## Running locally and running the tests
+The image can later be loaded using:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-pytest -v
-python src/train.py
+docker load < lab1-tumor-classifier.tar
 ```
 
-The tests check that:
+## Conclusion
 
-- invalid configuration values are rejected and environment overrides are read;
-- the dataset loads with the expected shape and the split is stratified and reproducible;
-- model selection picks the candidate with the highest CV score;
-- training writes both artifacts and evaluates all three candidates;
-- the selected model reaches ROC-AUC ≥ 0.95 and malignant recall ≥ 0.90 on the held-out set;
-- the saved model loads and returns valid labels with confidence scores.
+This lab extends the original Iris classification example into a more complete machine learning application. It introduces multiple model comparisons, cross-validation-based model selection, evaluation metrics, automated tests, and model artifact generation.
 
-## Sample results (default settings)
-
-```
-Cross-validation (5-fold, metric = roc_auc):
-  logistic_regression    0.9959 ± 0.0050
-  svm_rbf                0.9956 ± 0.0048
-  gradient_boosting      0.9920 ± 0.0052
-
-Selected model: logistic_regression
-Held-out test metrics:
-  accuracy          0.9825
-  precision         0.9861
-  recall            0.9861
-  f1                0.9861
-  roc_auc           0.9954
-  malignant_recall  0.9762
-  confusion         TN=41 FP=1 FN=1 TP=71
-```
-
-Logistic regression edges out the other two models on this dataset, which suggests the classes are close to linearly separable once the features are standardized.
-
-## Dataset
-
-The Breast Cancer Wisconsin (Diagnostic) dataset ships with scikit-learn (`sklearn.datasets.load_breast_cancer`), so no download is needed at build or run time. It has 569 samples with 30 numeric features computed from images of fine-needle aspirates of breast masses, labeled malignant (212) or benign (357).
+The application is packaged and successfully executed inside Docker, with the trained model and evaluation results saved outside the container.
