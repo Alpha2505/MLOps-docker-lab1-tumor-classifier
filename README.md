@@ -192,10 +192,10 @@ Logistic Regression was selected as the best-performing model based on the mean 
 
 **Confusion Matrix:**
 
-| | Predicted Benign | Predicted Malignant |
+| | Predicted Malignant | Predicted Benign |
 |---|---:|---:|
-| Actual Benign | 41 | 1 |
-| Actual Malignant | 1 | 71 |
+| Actual Malignant | 41 | 1 |
+| Actual Benign | 1 | 71 |
 
 These results demonstrate the model's performance on the selected dataset. They are for educational purposes only and should not be interpreted as clinical diagnostic performance.
 
